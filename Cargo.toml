@@ -2,6 +2,9 @@
 name = "akgine"
 version = "0.1.0"
 edition = "2024"
+description = "Global function"
+license = "GNU GPL v3"
+repository = "https://github.com/Arflaka/akgine"
 
 [lib]
 name = "akgine"
