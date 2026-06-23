@@ -36,12 +36,22 @@ dependencies = [
 name = "akgine"
 version = "0.1.0"
 dependencies = [
+ "akgine_macros",
  "android-activity",
  "eframe",
  "egui_extras",
  "rusqlite",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "akgine_macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
