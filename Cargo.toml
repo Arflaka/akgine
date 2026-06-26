@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"] # required for Android .so
 unused_parens = "allow"
 
 [dependencies]
-akgine_macros = { path="./akgine_macros", version="0.1.1", optional=true }
+akgine_macros = { path="./akgine_macros", version="0.1.2", optional=true }
 # akgine_macros = { path = "./akgine_macros" }
 egui_extras = { version = "0.34.1", features = ["image"] }
 serde = { version = "1", features = ["derive"] }
