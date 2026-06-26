@@ -409,19 +409,39 @@ get the sql table name
 2) name of the struct + "s"
 */
 fn resolve_table_name(ast: &DeriveInput) -> syn::Result<String> {
-    // travel on attributs on the TOP of the struct
+    let mut table_name: Option<String> = None;
+
+    /* travel on attributs on the TOP of the struct */
     for attr in &ast.attrs {
-        // if we found `#[table("...")]`
+        /* if we found `#[table(...)]` */
         if (attr.path().is_ident("table")) {
-            // parse_args extract the string in ()
-            let tableName: syn::LitStr = attr.parse_args()?;
-            return Ok(tableName.value());
+            
+            /* parse_nested_meta allows iterating over attrib input */
+            attr.parse_nested_meta(|meta: syn::meta::ParseNestedMeta<'_>| {
+                if (meta.path.is_ident("name")) {
+                    /* extract the value after `=` */
+                    let value: &syn::parse::ParseBuffer<'_> = meta.value()?;
+                    let s: syn::LitStr = value.parse()?;
+                    table_name = Some(s.value());
+                    Ok(())
+                }
+                else {
+                    /* ignore other parameters like XXX, YYY */
+                    Ok(())
+                }
+            })?;
         }
     }
-    // if there is no attrib, default rule :
-    // take the name of the struct and add "s".
+
+    /* if we found a name in the attributes, return it */
+    if let Some(name) = table_name {
+        return Ok(name);
+    }
+
+    /* if there is no attrib, default rule : */
+    /* take the name of the struct and add "s". */
     Ok(ast.ident.to_string() + "s")
-    // Ok(pascal_to_snake(&ast.ident.to_string()) + "s")
+    /* Ok(pascal_to_snake(&ast.ident.to_string()) + "s") */
 }
 
 /* fn pascal_to_snake(s: &str) -> String {
