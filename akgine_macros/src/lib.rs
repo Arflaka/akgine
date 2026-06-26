@@ -9,7 +9,7 @@ use syn::{
     Data, DeriveInput, Field, Fields, GenericArgument, PathArguments, Type, parse_macro_input,
 };
 
-/* #region 1. Public acces point */
+/* #region Public acces point */
 
 /* say that DbRecord is a "derive" macro */
 /* `attributes(table, column)` say that we can use it */
@@ -34,7 +34,7 @@ pub fn derive_db_record(input: TokenStream) -> TokenStream {
 
 /* #endregion */
 
-/* #region 2. Génération du Code Principal */
+/* #region generate main code */
 
 fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
     /* ast.ident is the name of the struct */
@@ -64,8 +64,10 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
         }
     };
 
-    /* vec to store each column ligne */
+    /* vec to store each ligne of finals functions */
     let mut col_exprs: Vec<TokenStream2> = Vec::new();
+    let mut get_values_exprs: Vec<TokenStream2> = Vec::new();
+    let mut to_params_exprs: Vec<TokenStream2> = Vec::new();
 
     /* travel each field of the struct */
     for field in named_fields {
@@ -74,15 +76,16 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
 
         /* #region check if we add the ligne or not */
 
-        /* Rule 1: do not include id in column */
+        /* Rule 1: do not include id in dbRecord function other than get_values */
         if (fieldName == "id") {
+            get_values_exprs.push(quote! { id: v.getValue("id")?.as_i64()? });
             continue;
         }
 
-        /* extract options from column for this field */
+        /* extract options from attribs for this field */
         let attrs: FieldAttrs = FieldAttrs::parse(field)?;
 
-        /* if `#[column(skip)]` -> skip the field */
+        /* if `#[attrib(skip)]` -> skip the field */
         if (attrs.skip) {
             continue;
         }
@@ -94,32 +97,23 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
         /* else -> use the field name */
         let col_name: &str = attrs.name.as_deref().unwrap_or(&fieldName);
 
+
         /* check if it's an option -> `is_option` = true and `inner` = option type */
         let (is_option, inner) = unwrap_option(&field.ty);
 
-        /* convert the rust type to sql type */
-        let col_type: TokenStream2 = map_rust_type(inner.unwrap_or(&field.ty))?;
+        let activeType: &Type = inner.unwrap_or(&field.ty);
+        
+        let col_name_lit: syn::LitStr = syn::LitStr::new(col_name, ident.span());
 
         /* #endregion */
 
-        /* #region construction of the ligne */
-        /* start generate the final ligne to add */
-        let mut expr: TokenStream2 = quote! { Column::new(#col_name, #col_type) };
+        /* #region push expresions */
+        col_exprs.push(generateColumnExpr(&attrs, col_name, field, is_option, inner)?);
+        
+        get_values_exprs.push(generateGetValueExpr(ident, activeType, &col_name_lit)?);
 
-        /* check if the column is nullable */
-        let nullable: bool = (is_option || attrs.nullable) && !attrs.not_null;
-        if (!nullable) {
-            expr = quote! { #expr.not_null() };
-        }
-
-        /* if there is a default value */
-        if let Some(default) = &attrs.default {
-            expr = quote! { #expr.default(#default) };
-        }
+        to_params_exprs.push(generateToParamsExpr(ident, &col_name_lit)?);
         /* #endregion */
-
-        /* add the ligne */
-        col_exprs.push(expr);
     }
 
     /* Final send : push the code on the user prog */
@@ -135,13 +129,77 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
                 /* * reapet for each */
                 vec![ #(#col_exprs),* ]
             }
+
+            fn indexes() -> Vec<IndexDef> {
+                /* Default behavior for derived structs (can be expanded to parse #[index(...)] later) */
+                vec![]
+            }
+
+            fn getValues(v: &ValueSet) -> Result<Self, DbError> {
+                Ok(Self {
+                    #(#get_values_exprs),*
+                })
+            }
+
+            fn toParams(&self) -> Vec<(&'static str, SqlValue)> {
+                vec![
+                    #(#to_params_exprs),*
+                ]
+            }
+
+            fn id(&self) -> Option<i64> {
+                if self.id > 0 { Some(self.id) } else { None }
+            }
+
+            fn set_id(&mut self, id: i64) {
+                self.id = id;
+            }
         }
     })
 }
 
 /* #endregion */
 
-/* #region 3. Analyseur d'Attributs de Champs */
+/* #region expresion maker */
+fn generateColumnExpr(attrs: &FieldAttrs, colName: &str, field: &Field, is_option: bool, inner: Option<&Type>) -> syn::Result<TokenStream2> {
+        /* convert the rust type to sql type */
+        let colType:TokenStream2  = map_rust_type(inner.unwrap_or(&field.ty))?;
+
+
+        /* start generate the final ligne to add */
+        let mut expr: TokenStream2 = quote! { Column::new(#colName, #colType) };
+
+        /* check if the column is nullable */
+        let nullable: bool = (is_option || attrs.nullable) && !attrs.not_null;
+        if (!nullable) {
+            expr = quote! { #expr.not_null() };
+        }
+
+        /* if there is a default value */
+        if let Some(default) = &attrs.default {
+            expr = quote! { #expr.default(#default) };
+        }
+
+        Ok(expr)
+}
+
+fn generateGetValueExpr(ident: &syn::Ident, activeType: &Type, col_name_lit: &syn::LitStr) -> syn::Result<TokenStream2> {
+        let as_method: syn::Ident = map_rust_type_to_as_method(activeType)?;
+
+        Ok(quote! {
+            #ident: v.getValue(#col_name_lit)?.#as_method()?
+        })
+}
+
+fn generateToParamsExpr(ident: &syn::Ident, col_name_lit: &syn::LitStr) -> syn::Result<TokenStream2> {
+        Ok(quote! {
+            (#col_name_lit, self.#ident.clone().into())
+        })
+}
+
+/* #endregion */
+
+/* #region analyse field attributes */
 
 /**
 struct to store what we found in `#[column()]`
@@ -228,7 +286,7 @@ impl FieldAttrs {
 
 /* #endregion */
 
-/* #region 4. Extracteur de Type Option */
+/* #region extract option type */
 
 /**
 check if the type is an option
@@ -255,7 +313,7 @@ fn unwrap_option(ty: &Type) -> (bool, Option<&Type>) {
 
 /* #endregion */
 
-/* #region 5. Correspondance des Types (Rust -> SQL) */
+/* #region type converter (Rust -> SQL) */
 
 /* get a rust type and send the token we want */
 fn map_rust_type(ty: &Type) -> syn::Result<TokenStream2> {
@@ -308,9 +366,42 @@ fn map_rust_type(ty: &Type) -> syn::Result<TokenStream2> {
     ))
 }
 
+/**
+ Helper function to figure out the right `as_XXX()` method for ValueSet -> Rust struct deserialization.
+*/
+fn map_rust_type_to_as_method(ty: &Type) -> syn::Result<syn::Ident> {
+    /* check if type is a typepath */
+    if let Type::Path(tp) = ty {
+        /* get the last element */
+        if let Some(seg) = tp.path.segments.last() {
+            let name: String = seg.ident.to_string();
+            let method_str: &str = match name.as_str() {
+                "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "isize" | "usize" => {
+                    "as_i64"
+                }
+                "f32" | "f64" => "as_f64",
+                "String" => "as_text",
+                "bool" => "as_bool",
+                "Vec" => "as_blob",
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        ty,
+                        "Cannot map type to an as_xxx method",
+                    ));
+                }
+            };
+            return Ok(syn::Ident::new(method_str, seg.ident.span()));
+        }
+    }
+    Err(syn::Error::new_spanned(
+        ty,
+        "Cannot determine as_xxx method for this type",
+    ))
+}
+
 /* #endregion */
 
-/* #region 6. Résolution du Nom de la Table  */
+/* #region resolve table name  */
 
 /**
 get the sql table name

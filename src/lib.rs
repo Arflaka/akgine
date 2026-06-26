@@ -4,7 +4,7 @@ pub mod navigation;
 pub mod widgets;
 
 #[cfg(feature = "derive")]
-pub mod akgine_macros;
+pub use akgine_macros;
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 
