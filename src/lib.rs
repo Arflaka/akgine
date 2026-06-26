@@ -3,6 +3,9 @@ pub mod database;
 pub mod navigation;
 pub mod widgets;
 
+#[cfg(feature = "derive")]
+pub use akgine_macros;
+
 // ── Utility ───────────────────────────────────────────────────────────────────
 
 /// Returns the current Unix timestamp in seconds.

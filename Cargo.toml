@@ -14,11 +14,16 @@ crate-type = ["cdylib", "rlib"] # required for Android .so
 unused_parens = "allow"
 
 [dependencies]
-akgine_macros = { path = "./akgine_macro" }
+akgine_macros = { path = "./akgine_macro", optional=true }
+# akgine_macros = { path = "./akgine_macro" }
 egui_extras = { version = "0.34.1", features = ["image"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.40", features = ["bundled"] }
+
+[features]
+default = [] # Aucune feature n'est activée par défaut
+derive = ["dep:akgine_macros"]
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 eframe = { version = "0.34.1", default-features = false, features = [

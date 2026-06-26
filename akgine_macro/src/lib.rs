@@ -1,65 +1,54 @@
-//! db_derive — procedural macro that auto-generates `impl DbRecord`.
-//!
-//! Usage
-//! ─────
-//! ```rust
-//! #[derive(Clone, Debug, DbRecord)]
-//! #[table_name("tasks")]            // optional — defaults to snake_case(Name)+"s"
-//! pub struct Task {
-//!     pub id:         i64,          // always skipped → becomes PK
-//!     pub user_id:    i64,
-//!     pub title:      String,
-//!     #[column(default = "0")]
-//!     pub done:       bool,
-//!     #[column(default = "0")]
-//!     pub deleted:    bool,
-//!     #[column(default = "(unixepoch())")]
-//!     pub updated_at: i64,
-//! }
-//! ```
-//!
-//! Per-field attribute  `#[column(...)]`
-//! ─────────────────────────────────────
-//! | key              | effect                                      |
-//! |------------------|---------------------------------------------|
-//! | `skip`           | exclude this field entirely                 |
-//! | `nullable`       | omit `.not_null()` on a non-Option field    |
-//! | `not_null`       | force `.not_null()` even on `Option<T>`     |
-//! | `name = "col"`   | override the column name                   |
-//! | `default = "v"`  | add `.default("v")`                        |
+#![allow(non_snake_case)]
+#![allow(unused_parens)]
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
+/* syn get token and convert it in AST */
 use syn::{
     Data, DeriveInput, Field, Fields, GenericArgument, PathArguments, Type, parse_macro_input,
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Public entry-point
-// ─────────────────────────────────────────────────────────────────────────────
+/* #region 1. Public acces point */
 
-#[proc_macro_derive(DbRecord, attributes(table_name, column))]
+/* say that DbRecord is a "derive" macro */
+/* `attributes(table, column)` say that we can use it */
+/**
+`#[column(skip)]` -> don't add the column at the db
+`#[column(nullable)]` -> set the column as nullable
+`#[column(not_null)]` -> don't allow null value for the column
+`#[column(name="")]` -> set the name of the column
+`#[column(default=)]` -> set the default value
+*/
+#[proc_macro_derive(DbRecord, attributes(table, column))]
 pub fn derive_db_record(input: TokenStream) -> TokenStream {
-    let ast = parse_macro_input!(input as DeriveInput);
+    /* convert token in ast */
+    /* if there is an error stop here */
+    let ast: DeriveInput = parse_macro_input!(input as DeriveInput);
+
+    /* call the implementation if there is an error convert it in compile error */
     impl_db_record(&ast)
         .unwrap_or_else(|e| e.to_compile_error())
-        .into()
+        .into() /* reconvert the proc_macro2::TokenStream in proc_macro::TokenStream for the compiler */
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Core code-generation
-// ─────────────────────────────────────────────────────────────────────────────
+/* #endregion */
+
+/* #region 2. Génération du Code Principal */
 
 fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
-    let struct_name = &ast.ident;
-    let table_name = resolve_table_name(ast)?;
+    /* ast.ident is the name of the struct */
+    let struct_name: &syn::Ident = &ast.ident;
 
-    // Only named-field structs are supported (enum/tuple structs are rejected).
-    let named_fields = match &ast.data {
+    /* get the name of the sql table */
+    let tableName: String = resolve_table_name(ast)?;
+
+    /* we only want stuct with named field */
+    let named_fields: &syn::punctuated::Punctuated<Field, syn::token::Comma> = match &ast.data {
         Data::Struct(s) => match &s.fields {
             Fields::Named(f) => &f.named,
             _ => {
+                /* error: if there is no name */
                 return Err(syn::Error::new_spanned(
                     struct_name,
                     "DbRecord requires a struct with named fields",
@@ -67,6 +56,7 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
             }
         },
         _ => {
+            /* error: if it's not a struct */
             return Err(syn::Error::new_spanned(
                 struct_name,
                 "DbRecord can only be derived for structs",
@@ -74,106 +64,159 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
         }
     };
 
-    // Build one `Column::new(...)...` expression per eligible field.
+    /* vec to store each column ligne */
     let mut col_exprs: Vec<TokenStream2> = Vec::new();
 
+    /* travel each field of the struct */
     for field in named_fields {
-        let ident = field.ident.as_ref().unwrap();
-        let name_str = ident.to_string();
+        let ident: &syn::Ident = field.ident.as_ref().unwrap();
+        let fieldName: String = ident.to_string();
 
-        // ── Skip the primary key ────────────────────────────────────────────
-        // A field named `id` is ALWAYS the PK; `columns()` must not list it.
-        if name_str == "id" {
+        /* #region check if we add the ligne or not */
+
+        /* Rule 1: do not include id in column */
+        if (fieldName == "id") {
             continue;
         }
 
-        let attrs = FieldAttrs::parse(field)?;
+        /* extract options from column for this field */
+        let attrs: FieldAttrs = FieldAttrs::parse(field)?;
 
-        // Honor explicit opt-out via `#[column(skip)]`.
-        if attrs.skip {
+        /* if `#[column(skip)]` -> skip the field */
+        if (attrs.skip) {
             continue;
         }
+        /* #endregion */
 
-        // ── Column name ────────────────────────────────────────────────────
-        let col_name = attrs.name.as_deref().unwrap_or(&name_str);
+        /* #region get all attribs */
 
-        // ── Type mapping ───────────────────────────────────────────────────
-        // Unwrap Option<T> to get the inner type for ColType resolution.
+        /* if `#[column(name = "")]` -> use it */
+        /* else -> use the field name */
+        let col_name: &str = attrs.name.as_deref().unwrap_or(&fieldName);
+
+        /* check if it's an option -> `is_option` = true and `inner` = option type */
         let (is_option, inner) = unwrap_option(&field.ty);
-        let col_type = map_rust_type(inner.unwrap_or(&field.ty))?;
 
-        // ── Build the expression ────────────────────────────────────────────
-        let mut expr = quote! { Column::new(#col_name, #col_type) };
+        /* convert the rust type to sql type */
+        let col_type: TokenStream2 = map_rust_type(inner.unwrap_or(&field.ty))?;
 
-        // Nullability:
-        //   • Option<T>          → nullable  (no .not_null())
-        //   • #[column(nullable)] → nullable
-        //   • everything else    → .not_null()
-        // An explicit #[column(not_null)] overrides Option<T>.
-        let nullable = (is_option || attrs.nullable) && !attrs.not_null;
-        if !nullable {
+        /* #endregion */
+
+        /* #region construction of the ligne */
+        /* start generate the final ligne to add */
+        let mut expr: TokenStream2 = quote! { Column::new(#col_name, #col_type) };
+
+        /* check if the column is nullable */
+        let nullable: bool = (is_option || attrs.nullable) && !attrs.not_null;
+        if (!nullable) {
             expr = quote! { #expr.not_null() };
         }
 
+        /* if there is a default value */
         if let Some(default) = &attrs.default {
             expr = quote! { #expr.default(#default) };
         }
+        /* #endregion */
 
+        /* add the ligne */
         col_exprs.push(expr);
     }
 
-    // Emit the full `impl DbRecord` block.
+    /* Final send : push the code on the user prog */
     Ok(quote! {
         impl DbRecord for #struct_name {
             fn table_name() -> &'static str {
-                #table_name
+                #tableName
             }
 
             fn columns() -> Vec<Column> {
+                /* #() turn on the vec */
+                /* , write a "," between each items */
+                /* * reapet for each */
                 vec![ #(#col_exprs),* ]
             }
         }
     })
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Per-field attribute parser
-// ─────────────────────────────────────────────────────────────────────────────
+/* #endregion */
 
+/* #region 3. Analyseur d'Attributs de Champs */
+
+/**
+struct to store what we found in `#[column()]`
+*/
 #[derive(Default)]
 struct FieldAttrs {
     skip: bool,
     nullable: bool,
-    not_null: bool, // explicit override for Option<T> fields
+    not_null: bool,
     name: Option<String>,
     default: Option<String>,
 }
 
 impl FieldAttrs {
+    /**
+    get each attribs set in `#[column()]`
+    */
     fn parse(field: &Field) -> syn::Result<Self> {
-        let mut out = Self::default();
+        let mut out: FieldAttrs = Self::default();
 
+        /* travel each attribs */
         for attr in &field.attrs {
-            if !attr.path().is_ident("column") {
+            /* we only use `#[column()]` */
+            if (!attr.path().is_ident("column")) {
                 continue;
             }
 
-            // parse_nested_meta handles: #[column(key)] and #[column(key = "val")]
-            attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("skip") {
+            /* `parse_nested_meta` is give by syn to check the content */
+            attr.parse_nested_meta(|meta: syn::meta::ParseNestedMeta<'_>| {
+                if (meta.path.is_ident("skip")) {
                     out.skip = true;
-                } else if meta.path.is_ident("nullable") {
+                } else if (meta.path.is_ident("nullable")) {
+                    if (out.not_null) {
+                        return Err(syn::Error::new_spanned(
+                            &meta.path,
+                            "can't have nullable and not_null at the same type",
+                        ));
+                    }
                     out.nullable = true;
-                } else if meta.path.is_ident("not_null") {
+                } else if (meta.path.is_ident("not_null")) {
+                    if (out.nullable) {
+                        return Err(syn::Error::new_spanned(
+                            &meta.path,
+                            "can't have not_null and nullable at the same type",
+                        ));
+                    }
                     out.not_null = true;
-                } else if meta.path.is_ident("name") {
-                    let v = meta.value()?;
+                } else if (meta.path.is_ident("name")) {
+                    /* get what there is after `=` */
+                    let v: &syn::parse::ParseBuffer<'_> = meta.value()?;
+                    /* check if it's a string */
                     let s: syn::LitStr = v.parse()?;
                     out.name = Some(s.value());
-                } else if meta.path.is_ident("default") {
-                    let v = meta.value()?;
-                    let s: syn::LitStr = v.parse()?;
-                    out.default = Some(s.value());
+                } else if (meta.path.is_ident("default")) {
+                    // let v: &syn::parse::ParseBuffer<'_> = meta.value()?;
+                    // let s: syn::LitStr = v.parse()?;
+
+                    let lit: syn::Lit = meta.value()?.parse()?;
+
+                    /* convert the value in string */
+                    let string_value: String = match lit {
+                        syn::Lit::Str(s) => s.value(),
+                        syn::Lit::Int(i) => i.base10_digits().to_string(),
+                        syn::Lit::Float(f) => f.base10_digits().to_string(),
+                        syn::Lit::Bool(b) => b.value.to_string(),
+                        _ => {
+                            return Err(syn::Error::new_spanned(
+                                lit,
+                                "Type de valeur par défaut non supporté",
+                            ));
+                        }
+                    };
+
+                    // out.default = Some(s.value());
+                    out.default = Some(string_value);
                 }
                 Ok(())
             })?;
@@ -183,16 +226,23 @@ impl FieldAttrs {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Type helpers
-// ─────────────────────────────────────────────────────────────────────────────
+/* #endregion */
 
-/// Returns `(true, Some(&inner_type))` if `ty` is `Option<inner_type>`.
+/* #region 4. Extracteur de Type Option */
+
+/**
+check if the type is an option
+return if it's an option and the type
+*/
 fn unwrap_option(ty: &Type) -> (bool, Option<&Type>) {
+    /* check if the type is a path */
     if let Type::Path(tp) = ty {
+        /* get the last item */
         if let Some(seg) = tp.path.segments.last() {
-            if seg.ident == "Option" {
+            if (seg.ident == "Option") {
+                /* check if there is `< >` */
                 if let PathArguments::AngleBracketed(ab) = &seg.arguments {
+                    /* get the first element in `< >` and check if it's a type */
                     if let Some(GenericArgument::Type(inner)) = ab.args.first() {
                         return (true, Some(inner));
                     }
@@ -203,18 +253,18 @@ fn unwrap_option(ty: &Type) -> (bool, Option<&Type>) {
     (false, None)
 }
 
-/// Maps a Rust primitive / std type to its `ColType` token.
-///
-/// Supported mappings
-/// ──────────────────
-/// i8 / i16 / i32 / i64 / u8 / u16 / u32 / u64 / isize / usize / bool  →  ColType::Integer
-/// f32 / f64                                                               →  ColType::Real
-/// String                                                                  →  ColType::Text
-/// Vec<u8>                                                                 →  ColType::Blob
+/* #endregion */
+
+/* #region 5. Correspondance des Types (Rust -> SQL) */
+
+/* get a rust type and send the token we want */
 fn map_rust_type(ty: &Type) -> syn::Result<TokenStream2> {
+    /* check if the type is a path */
     if let Type::Path(tp) = ty {
+        /* get the last element */
         if let Some(seg) = tp.path.segments.last() {
-            let name = seg.ident.to_string();
+            /* convert the type in string */
+            let name: String = seg.ident.to_string();
             return match name.as_str() {
                 "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "isize" | "usize"
                 | "bool" => Ok(quote! { ColType::Integer }),
@@ -223,11 +273,14 @@ fn map_rust_type(ty: &Type) -> syn::Result<TokenStream2> {
 
                 "String" => Ok(quote! { ColType::Text }),
 
-                // Vec<u8> is the only supported Vec variant (→ Blob).
+                /* if it's `Vec<u8>` for blob */
                 "Vec" => {
+                    /* check bracket content */
                     if let PathArguments::AngleBracketed(ab) = &seg.arguments {
+                        /* get the element */
                         if let Some(GenericArgument::Type(Type::Path(inner))) = ab.args.first() {
-                            if inner.path.is_ident("u8") {
+                            /* if it's u8 and nothing else */
+                            if (inner.path.is_ident("u8")) {
                                 return Ok(quote! { ColType::Blob });
                             }
                         }
@@ -238,6 +291,7 @@ fn map_rust_type(ty: &Type) -> syn::Result<TokenStream2> {
                     ))
                 }
 
+                /* if it's an other type we don't make it */
                 other => Err(syn::Error::new_spanned(
                     ty,
                     format!(
@@ -254,25 +308,32 @@ fn map_rust_type(ty: &Type) -> syn::Result<TokenStream2> {
     ))
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Table-name resolution
-// ─────────────────────────────────────────────────────────────────────────────
+/* #endregion */
 
+/* #region 6. Résolution du Nom de la Table  */
+
+/**
+get the sql table name
+1) `#[table("...")]`
+2) name of the struct + "s"
+*/
 fn resolve_table_name(ast: &DeriveInput) -> syn::Result<String> {
-    // Look for an explicit `#[table_name("tasks")]` attribute on the struct.
+    // travel on attributs on the TOP of the struct
     for attr in &ast.attrs {
-        if attr.path().is_ident("table_name") {
-            let s: syn::LitStr = attr.parse_args()?;
-            return Ok(s.value());
+        // if we found `#[table("...")]`
+        if (attr.path().is_ident("table")) {
+            // parse_args extract the string in ()
+            let tableName: syn::LitStr = attr.parse_args()?;
+            return Ok(tableName.value());
         }
     }
-    // Default: PascalCase struct name → snake_case + "s"
-    // e.g.  Task → tasks,  UserProfile → user_profiles
-    Ok(pascal_to_snake(&ast.ident.to_string()) + "s")
+    // if there is no attrib, default rule :
+    // take the name of the struct and add "s".
+    Ok(ast.ident.to_string() + "s")
+    // Ok(pascal_to_snake(&ast.ident.to_string()) + "s")
 }
 
-/// Converts `PascalCase` to `snake_case`.
-fn pascal_to_snake(s: &str) -> String {
+/* fn pascal_to_snake(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 4);
     for (i, ch) in s.chars().enumerate() {
         if ch.is_uppercase() && i > 0 {
@@ -281,4 +342,6 @@ fn pascal_to_snake(s: &str) -> String {
         out.push(ch.to_ascii_lowercase());
     }
     out
-}
+}*/
+
+/* #endregion */
