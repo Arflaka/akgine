@@ -12,15 +12,18 @@ use syn::{
 /* #region Public acces point */
 
 /* say that DbRecord is a "derive" macro */
-/* `attributes(table, column)` say that we can use it */
+/* `attributes(...)` say that we can use it */
 /**
 `#[column(skip)]` -> don't add the column at the db
 `#[column(nullable)]` -> set the column as nullable
 `#[column(not_null)]` -> don't allow null value for the column
 `#[column(name="")]` -> set the name of the column
 `#[column(default=)]` -> set the default value
+`#[table(name="...")]` -> set the table name
+`#[index("col1", "col2")]` -> create an index for the specified columns
+
 */
-#[proc_macro_derive(DbRecord, attributes(table, column))]
+#[proc_macro_derive(DbRecord, attributes(table, column, index))]
 pub fn derive_db_record(input: TokenStream) -> TokenStream {
     /* convert token in ast */
     /* if there is an error stop here */
@@ -69,6 +72,11 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
     let mut get_values_exprs: Vec<TokenStream2> = Vec::new();
     let mut to_params_exprs: Vec<TokenStream2> = Vec::new();
 
+    /* Initialize a Set to track all valid SQL column names for index verification */
+    let mut valid_columns: std::collections::HashSet<String> = std::collections::HashSet::new();
+    /* id is always explicitly handled and available */
+    valid_columns.insert("id".to_string()); 
+
     /* travel each field of the struct */
     for field in named_fields {
         let ident: &syn::Ident = field.ident.as_ref().unwrap();
@@ -97,6 +105,8 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
         /* else -> use the field name */
         let col_name: &str = attrs.name.as_deref().unwrap_or(&fieldName);
 
+        /* push the verified col name to our valid list */
+        valid_columns.insert(col_name.to_string());
 
         /* check if it's an option -> `is_option` = true and `inner` = option type */
         let (is_option, inner) = unwrap_option(&field.ty);
@@ -116,6 +126,9 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
         /* #endregion */
     }
 
+    /* Process the indexes at the top level of the struct, now that we know all columns */
+    let indexes_exprs = resolve_indexes(ast, &valid_columns)?;
+
     /* Final send : push the code on the user prog */
     Ok(quote! {
         impl DbRecord for #struct_name {
@@ -127,12 +140,16 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
                 /* #() turn on the vec */
                 /* , write a "," between each items */
                 /* * reapet for each */
-                vec![ #(#col_exprs),* ]
+                vec![ 
+                    #(#col_exprs),* 
+                ]
             }
 
             fn indexes() -> Vec<IndexDef> {
                 /* Default behavior for derived structs (can be expanded to parse #[index(...)] later) */
-                vec![]
+                vec![
+                    #(#indexes_exprs),*
+                ]
             }
 
             fn getValues(v: &ValueSet) -> Result<Self, DbError> {
@@ -454,5 +471,74 @@ fn resolve_table_name(ast: &DeriveInput) -> syn::Result<String> {
     }
     out
 }*/
+
+/* #endregion */
+
+/* #region resolve indexes */
+
+/**
+ Parses struct-level `#[index(...)]` attributes.
+ Verifies:
+ 1. Fields inside exist in the struct (using valid_columns).
+ 2. There are no duplicate permutations (e.g. `#[index("A", "B")]` == `#[index("B", "A")]`).
+*/
+fn resolve_indexes(
+    ast: &DeriveInput,
+    valid_columns: &std::collections::HashSet<String>,
+) -> syn::Result<Vec<TokenStream2>> {
+    let mut indexes_exprs: Vec<TokenStream2> = Vec::new();
+    
+    /* We use a HashSet of sorted vectors to track unique combinations regardless of order */
+    let mut seen_indexes: std::collections::HashSet<Vec<String>> = std::collections::HashSet::new();
+
+    for attr in &ast.attrs {
+        if attr.path().is_ident("index") {
+            /* Parse a comma-separated list of string literals: #[index("col1", "col2", ...)] */
+            let nested: syn::punctuated::Punctuated<syn::LitStr, syn::token::Comma> = attr.parse_args_with(
+                syn::punctuated::Punctuated::<syn::LitStr, syn::Token![,]>::parse_terminated
+            )?;
+
+            let mut cols: Vec<String> = Vec::new();
+            
+            for lit in nested {
+                let col_name: String = lit.value();
+                
+                /* Verification 1: The index field must exist in the valid columns list */
+                if !valid_columns.contains(&col_name) {
+                    return Err(syn::Error::new(
+                        lit.span(),
+                        format!("Column '{}' does not exist in the struct or is skipped", col_name),
+                    ));
+                }
+                cols.push(col_name);
+            }
+
+            if cols.is_empty() {
+                return Err(syn::Error::new_spanned(attr, "Index must contain at least one column"));
+            }
+
+            /* Verification 2: Check for duplicate index combinations */
+            let mut sorted_cols: Vec<String> = cols.clone();
+            sorted_cols.sort(); /* ["B", "A"] becomes ["A", "B"] */
+            
+            /* If it returns false, it means the exact combination was already inserted */
+            if !seen_indexes.insert(sorted_cols) {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "Duplicate index combination detected (order does not matter)"
+                ));
+            }
+
+            /* Convert Strings back to TokenStreams (LitStrs) to inject them into the macro expansion */
+            let col_lits = cols.iter().map(|c| syn::LitStr::new(c, proc_macro2::Span::call_site()));
+            
+            indexes_exprs.push(quote! {
+                IndexDef::new(&[ #(#col_lits),* ])
+            });
+        }
+    }
+
+    Ok(indexes_exprs)
+}
 
 /* #endregion */
