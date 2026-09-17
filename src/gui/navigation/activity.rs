@@ -1,4 +1,6 @@
-use crate::navigation::page::PageTrait;
+use crate::gui::context::UiContext;
+use crate::gui::navigation::page::PageTrait;
+
 use eframe::egui;
 
 pub enum ActivityContent {
@@ -94,7 +96,8 @@ impl Activity {
 pub trait ActivityTrait {
     fn activity(&self) -> &Activity;
 
-    fn ui(&mut self, ui: &mut egui::Ui) {
+    fn ui(&mut self, ctx: &mut UiContext) {
+        let ui: &mut egui::Ui = ctx.egui_ui;
         ui.label(self.activity().title());
     }
 }
