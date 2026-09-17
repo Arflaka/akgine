@@ -1,5 +1,7 @@
 #![allow(non_snake_case)]
+#[cfg(feature = "database")]
 pub mod database;
+
 #[cfg(feature = "gui")]
 pub mod gui;
 
