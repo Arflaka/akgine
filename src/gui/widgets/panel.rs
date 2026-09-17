@@ -84,7 +84,7 @@ impl Panel {
             PanelPosition::Top => {
                 eframe::egui::Panel::top(panel_id)
                     .frame(frame)
-                    .show_inside(ctx.egui_ui, |ui| {
+                    .show(ctx.egui_ui, |ui| {
                         let mut inner_ctx = UiContext::new(ui);
                         add_contents(&mut inner_ctx)
                     })
@@ -94,7 +94,7 @@ impl Panel {
             PanelPosition::Bottom => {
                 eframe::egui::Panel::bottom(panel_id)
                     .frame(frame)
-                    .show_inside(ctx.egui_ui, |ui| {
+                    .show(ctx.egui_ui, |ui| {
                         let mut inner_ctx = UiContext::new(ui);
                         add_contents(&mut inner_ctx)
                     })
@@ -104,7 +104,7 @@ impl Panel {
             PanelPosition::Left => {
                 eframe::egui::Panel::left(panel_id)
                     .frame(frame)
-                    .show_inside(ctx.egui_ui, |ui| {
+                    .show(ctx.egui_ui, |ui| {
                         let mut inner_ctx = UiContext::new(ui);
                         add_contents(&mut inner_ctx)
                     })
@@ -114,7 +114,7 @@ impl Panel {
             PanelPosition::Right => {
                 eframe::egui::Panel::right(panel_id)
                     .frame(frame)
-                    .show_inside(ctx.egui_ui, |ui| {
+                    .show(ctx.egui_ui, |ui| {
                         let mut inner_ctx = UiContext::new(ui);
                         add_contents(&mut inner_ctx)
                     })
@@ -124,7 +124,7 @@ impl Panel {
             PanelPosition::Central => {
                 eframe::egui::CentralPanel::default()
                     .frame(frame)
-                    .show_inside(ctx.egui_ui, |ui| {
+                    .show(ctx.egui_ui, |ui| {
                         let mut inner_ctx = UiContext::new(ui);
                         add_contents(&mut inner_ctx)
                     })
