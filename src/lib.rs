@@ -5,6 +5,9 @@ pub mod database;
 #[cfg(feature = "gui")]
 pub mod gui;
 
+#[cfg(feature = "web")]
+pub mod web;
+
 #[cfg(feature = "derive")]
 pub use akgine_macros;
 
