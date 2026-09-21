@@ -97,19 +97,20 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
         /* else -> use the field name */
         let col_name: &str = attrs.name.as_deref().unwrap_or(&fieldName);
 
-
         /* check if it's an option -> `is_option` = true and `inner` = option type */
         let (is_option, inner) = unwrap_option(&field.ty);
 
         let activeType: &Type = inner.unwrap_or(&field.ty);
-        
+
         let col_name_lit: syn::LitStr = syn::LitStr::new(col_name, ident.span());
 
         /* #endregion */
 
         /* #region push expresions */
-        col_exprs.push(generateColumnExpr(&attrs, col_name, field, is_option, inner)?);
-        
+        col_exprs.push(generateColumnExpr(
+            &attrs, col_name, field, is_option, inner,
+        )?);
+
         get_values_exprs.push(generateGetValueExpr(ident, activeType, &col_name_lit)?);
 
         to_params_exprs.push(generateToParamsExpr(ident, &col_name_lit)?);
@@ -118,30 +119,30 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
 
     /* Final send : push the code on the user prog */
     Ok(quote! {
-        impl DbRecord for #struct_name {
+        impl ::akgine::database::DbRecord for #struct_name {
             fn table_name() -> &'static str {
                 #tableName
             }
 
-            fn columns() -> Vec<Column> {
+            fn columns() -> Vec<::akgine::database::Column> {
                 /* #() turn on the vec */
                 /* , write a "," between each items */
                 /* * reapet for each */
                 vec![ #(#col_exprs),* ]
             }
 
-            fn indexes() -> Vec<IndexDef> {
+            fn indexes() -> Vec<::akgine::database::IndexDef> {
                 /* Default behavior for derived structs (can be expanded to parse #[index(...)] later) */
                 vec![]
             }
 
-            fn getValues(v: &ValueSet) -> Result<Self, DbError> {
+            fn getValues(v: &::akgine::database::ValueSet) -> Result<Self, ::akgine::database::DbError> {
                 Ok(Self {
                     #(#get_values_exprs),*
                 })
             }
 
-            fn toParams(&self) -> Vec<(&'static str, SqlValue)> {
+            fn toParams(&self) -> Vec<(&'static str, ::akgine::database::SqlValue)> {
                 vec![
                     #(#to_params_exprs),*
                 ]
@@ -161,40 +162,52 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
 /* #endregion */
 
 /* #region expresion maker */
-fn generateColumnExpr(attrs: &FieldAttrs, colName: &str, field: &Field, is_option: bool, inner: Option<&Type>) -> syn::Result<TokenStream2> {
-        /* convert the rust type to sql type */
-        let colType:TokenStream2  = map_rust_type(inner.unwrap_or(&field.ty))?;
+fn generateColumnExpr(
+    attrs: &FieldAttrs,
+    colName: &str,
+    field: &Field,
+    is_option: bool,
+    inner: Option<&Type>,
+) -> syn::Result<TokenStream2> {
+    /* convert the rust type to sql type */
+    let colType: TokenStream2 = map_rust_type(inner.unwrap_or(&field.ty))?;
 
+    /* start generate the final ligne to add */
+    let mut expr: TokenStream2 = quote! { ::akgine::database::Column::new(#colName, #colType) };
 
-        /* start generate the final ligne to add */
-        let mut expr: TokenStream2 = quote! { Column::new(#colName, #colType) };
+    /* check if the column is nullable */
+    let nullable: bool = (is_option || attrs.nullable) && !attrs.not_null;
+    if (!nullable) {
+        expr = quote! { #expr.not_null() };
+    }
 
-        /* check if the column is nullable */
-        let nullable: bool = (is_option || attrs.nullable) && !attrs.not_null;
-        if (!nullable) {
-            expr = quote! { #expr.not_null() };
-        }
+    /* if there is a default value */
+    if let Some(default) = &attrs.default {
+        expr = quote! { #expr.default(#default) };
+    }
 
-        /* if there is a default value */
-        if let Some(default) = &attrs.default {
-            expr = quote! { #expr.default(#default) };
-        }
-
-        Ok(expr)
+    Ok(expr)
 }
 
-fn generateGetValueExpr(ident: &syn::Ident, activeType: &Type, col_name_lit: &syn::LitStr) -> syn::Result<TokenStream2> {
-        let as_method: syn::Ident = map_rust_type_to_as_method(activeType)?;
+fn generateGetValueExpr(
+    ident: &syn::Ident,
+    activeType: &Type,
+    col_name_lit: &syn::LitStr,
+) -> syn::Result<TokenStream2> {
+    let as_method: syn::Ident = map_rust_type_to_as_method(activeType)?;
 
-        Ok(quote! {
-            #ident: v.getValue(#col_name_lit)?.#as_method()?
-        })
+    Ok(quote! {
+        #ident: v.getValue(#col_name_lit)?.#as_method()?
+    })
 }
 
-fn generateToParamsExpr(ident: &syn::Ident, col_name_lit: &syn::LitStr) -> syn::Result<TokenStream2> {
-        Ok(quote! {
-            (#col_name_lit, self.#ident.clone().into())
-        })
+fn generateToParamsExpr(
+    ident: &syn::Ident,
+    col_name_lit: &syn::LitStr,
+) -> syn::Result<TokenStream2> {
+    Ok(quote! {
+        (#col_name_lit, self.#ident.clone().into())
+    })
 }
 
 /* #endregion */
@@ -325,11 +338,11 @@ fn map_rust_type(ty: &Type) -> syn::Result<TokenStream2> {
             let name: String = seg.ident.to_string();
             return match name.as_str() {
                 "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "isize" | "usize"
-                | "bool" => Ok(quote! { ColType::Integer }),
+                | "bool" => Ok(quote! { ::akgine::database::ColType::Integer }),
 
-                "f32" | "f64" => Ok(quote! { ColType::Real }),
+                "f32" | "f64" => Ok(quote! { ::akgine::database::ColType::Real }),
 
-                "String" => Ok(quote! { ColType::Text }),
+                "String" => Ok(quote! { ::akgine::database::ColType::Text }),
 
                 /* if it's `Vec<u8>` for blob */
                 "Vec" => {
@@ -339,7 +352,7 @@ fn map_rust_type(ty: &Type) -> syn::Result<TokenStream2> {
                         if let Some(GenericArgument::Type(Type::Path(inner))) = ab.args.first() {
                             /* if it's u8 and nothing else */
                             if (inner.path.is_ident("u8")) {
-                                return Ok(quote! { ColType::Blob });
+                                return Ok(quote! { ::akgine::database::ColType::Blob });
                             }
                         }
                     }
