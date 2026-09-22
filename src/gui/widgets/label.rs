@@ -1,0 +1,183 @@
+use std::sync::Arc;
+
+use eframe::egui::{self, TextWrapMode};
+
+use crate::gui::context::UiContext;
+use crate::gui::types::{Align, Color, Direction, Vec2};
+
+pub struct Label {
+    id: String,
+    /** Texte afficher */
+    label: Option<String>,
+    icon: Option<Arc<[u8]>>,
+    /** La taille est maintenant une option. Si None, le bouton s'ajuste au contenu. */
+    labelSize: Option<egui::Vec2>,
+    iconSize: egui::Vec2,
+    textSize: f32,
+    /** TopDown, BottomUp, LeftToRight, RightToLeft */
+    layoutDirection: egui::Direction,
+    /** Option pour la couleur de fond */
+    bgColor: Option<egui::Color32>,
+    /** Option pour la couleur du texte */
+    textColor: Option<egui::Color32>,
+    /** Alignement : Min (Gauche), Center (Milieu), Max (Droite) */
+    alignment: egui::Align,
+    /** If the label is clickable */
+    clickable: bool,
+}
+impl Label {
+    pub fn new(
+        id: impl Into<String>,
+        label: Option<String>,
+        icon: Option<Arc<[u8]>>,
+        labelSize: Option<Vec2>,
+        iconSize: Vec2,
+        textSize: f32,
+        layoutDirection: Direction,
+        bgColor: Option<Color>,
+        textColor: Option<Color>,
+        alignment: Align,
+        clickable: bool,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            label,
+            icon,
+            labelSize: labelSize.map(|s| s.into()),
+            iconSize: iconSize.into(),
+            textSize,
+            layoutDirection: layoutDirection.into(),
+            bgColor: bgColor.map(|c| c.into()),
+            textColor: textColor.map(|c| c.into()),
+            alignment: alignment.into(),
+            clickable,
+        }
+    }
+
+    pub fn text(id: impl Into<String>, text: impl Into<String>) -> Self {
+        Self::new(
+            id.into(),
+            Some(text.into()),
+            None,
+            None,
+            Vec2::new(0., 0.),
+            14.0,
+            Direction::LeftToRight,
+            None,
+            None,
+            Align::Min,
+            false,
+        )
+    }
+
+    pub fn ui(&self, ctx: &mut UiContext) -> bool {
+        let ui: &mut egui::Ui = ctx.egui_ui;
+        /* Astuce du calque de fond (Shape::Noop) :
+        Puisqu'on ne connaît pas toujours la taille à l'avance, on réserve
+        un index dans le painter AVANT de dessiner le texte/icône.
+        On y place une forme vide temporaire. */
+        let bg_idx: egui::layers::ShapeIdx = ui.painter().add(egui::Shape::Noop);
+
+        /* Gestion dynamique de l'alignement selon la direction du layout */
+        /* separation car `cross_align` et `main_align` change en fonction de la direction */
+        let mut layout: egui::Layout = egui::Layout::from_main_dir_and_cross_align(
+            self.layoutDirection,
+            if self.layoutDirection.is_vertical() {
+                self.alignment
+            } else {
+                egui::Align::Center
+            },
+        );
+
+        if self.layoutDirection.is_horizontal() {
+            layout = layout.with_main_align(self.alignment);
+            /* Conserve la justification transversale d'origine uniquement si horizontal */
+            // layout = layout.with_cross_justify(true);
+        }
+
+        /* Création du conteneur adaptatif :
+        Si `btnSize` est None, on utilise Vec2::ZERO. Cela indique à egui
+        de réduire la zone (shrink-to-fit) pour qu'elle épouse parfaitement le contenu. */
+        let desired_size: egui::Vec2 = self.labelSize.unwrap_or(egui::Vec2::ZERO);
+
+        let inner_res: egui::InnerResponse<()> =
+            ui.allocate_ui_with_layout(desired_size, layout, |ui| {
+                /* Si une taille fixe est demandée, on force les contraintes minimales
+                et maximales de cette sous-interface. */
+                if let Some(size) = self.labelSize {
+                    ui.set_min_size(size);
+                    ui.set_max_size(size);
+                }
+
+                if let Some(iconBytes) = &self.icon {
+                    let image: egui::ImageSource<'_> = egui::ImageSource::Bytes {
+                        uri: std::borrow::Cow::Owned(self.id.clone()),
+                        bytes: egui::load::Bytes::Shared(iconBytes.clone()),
+                    };
+
+                    ui.add(egui::Image::new(image).fit_to_exact_size(self.iconSize));
+                }
+
+                /* Affichage conditionnel du label */
+                if let Some(label_text) = &self.label {
+                    let mut rich_text: egui::RichText =
+                        egui::RichText::new(label_text).size(self.textSize);
+
+                    /* Application de la couleur de texte personnalisée */
+                    if let Some(txt_color) = self.textColor {
+                        rich_text = rich_text.color(txt_color);
+                    }
+
+                    /* Rend le texte non selectionnable */
+                    ui.add(
+                        egui::Label::new(rich_text)
+                            .selectable(false)
+                            .wrap_mode(TextWrapMode::Extend),
+                    );
+                }
+            });
+
+        /* Récupération du rectangle final calculé par egui après avoir dessiné le contenu */
+        let rect: egui::Rect = inner_res.response.rect;
+
+        // 1. Activation du Sense::click() uniquement si clickable est true
+        let sense = if self.clickable {
+            egui::Sense::click()
+        } else {
+            egui::Sense::hover()
+        };
+
+        /* Ajout de l'interaction (clic) manuellement sur ce rectangle dynamique */
+        let mut response: egui::Response = ui.interact(rect, ui.id().with(&self.id), sense);
+
+        if ui.is_rect_visible(rect) {
+            /* Mise à jour du calque : maintenant qu'on a les dimensions exactes (rect),
+            on remplace la forme temporaire (Noop) par le rectangle coloré final.
+            Il apparaîtra magiquement EN DESSOUS du texte et de l'icône ! */
+            if let Some(bg) = self.bgColor {
+                ui.painter()
+                    .set(bg_idx, egui::Shape::rect_filled(rect, 4.0, bg));
+            }
+
+            // 2. Application des effets visuels (hover/click) uniquement si cliquable
+            if self.clickable {
+                /* Dessine l'effet visuel de survol ou de clic par-dessus le fond */
+                if response.is_pointer_button_down_on() {
+                    ui.painter()
+                        .rect_filled(rect, 4.0, egui::Color32::from_white_alpha(40));
+                } else if response.hovered() {
+                    ui.painter()
+                        .rect_filled(rect, 4.0, egui::Color32::from_white_alpha(20));
+                }
+            }
+        }
+
+        // 3. Modification du curseur uniquement si cliquable
+        if self.clickable {
+            response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+        }
+
+        // 4. Renvoie true uniquement si le label est cliquable ET a été cliqué
+        self.clickable && response.clicked()
+    }
+}

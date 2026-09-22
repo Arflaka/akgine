@@ -1,4 +1,4 @@
-use eframe::egui;
+use crate::gui::context::UiContext;
 
 pub struct Page {
     title: &'static str,
@@ -41,5 +41,5 @@ impl Page {
 pub trait PageTrait {
     fn page(&self) -> &Page;
 
-    fn ui(&mut self, ui: &mut egui::Ui);
+    fn ui(&mut self, ui: &mut UiContext);
 }

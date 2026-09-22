@@ -1,7 +1,12 @@
 #![allow(non_snake_case)]
+#[cfg(feature = "database")]
 pub mod database;
-pub mod navigation;
-pub mod widgets;
+
+#[cfg(feature = "gui")]
+pub mod gui;
+
+#[cfg(feature = "web")]
+pub mod web;
 
 #[cfg(feature = "derive")]
 pub use akgine_macros;

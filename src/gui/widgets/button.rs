@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+use crate::gui::context::UiContext;
+use crate::gui::types::{Align, Color, Direction, Vec2};
+
 use eframe::egui::{self, TextWrapMode};
 
 pub struct Button {
@@ -24,29 +27,30 @@ impl Button {
         id: String,
         label: Option<String>,
         icon: Option<Arc<[u8]>>,
-        btnSize: Option<egui::Vec2>,
-        iconSize: egui::Vec2,
+        btnSize: Option<Vec2>,
+        iconSize: Vec2,
         textSize: f32,
-        layoutDirection: egui::Direction,
-        bgColor: Option<egui::Color32>,
-        textColor: Option<egui::Color32>,
-        alignment: egui::Align,
+        layoutDirection: Direction,
+        bgColor: Option<Color>,
+        textColor: Option<Color>,
+        alignment: Align,
     ) -> Self {
         Self {
             id,
             label,
             icon,
-            btnSize,
-            iconSize,
+            btnSize: btnSize.map(|s| s.into()),
+            iconSize: iconSize.into(),
             textSize,
-            layoutDirection,
-            bgColor,
-            textColor,
-            alignment,
+            layoutDirection: layoutDirection.into(),
+            bgColor: bgColor.map(|c| c.into()),
+            textColor: textColor.map(|c| c.into()),
+            alignment: alignment.into(),
         }
     }
 
-    pub fn ui(&self, ui: &mut egui::Ui) -> bool {
+    pub fn ui(&self, ctx: &mut UiContext) -> bool {
+        let ui: &mut egui::Ui = ctx.egui_ui;
         /* Astuce du calque de fond (Shape::Noop) :
         Puisqu'on ne connaît pas toujours la taille à l'avance, on réserve
         un index dans le painter AVANT de dessiner le texte/icône.
