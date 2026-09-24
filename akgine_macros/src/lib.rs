@@ -232,7 +232,7 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
                 ]
             }
 
-            fn getValues(v: &::akgine::database::ValueSet, db: &::akgine::database::DataBase) -> Result<Self, ::akgine::database::DbError> {
+            fn getValues(v: &::akgine::database::ValueSet, _db: &::akgine::database::DataBase) -> Result<Self, ::akgine::database::DbError> {
                 Ok(Self {
                     #(#get_values_exprs),*
                 })
