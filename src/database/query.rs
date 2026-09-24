@@ -1,5 +1,7 @@
 // All values are bound as ? parameters — never interpolated into SQL.
 
+use std::sync::atomic::Ordering;
+
 use crate::database::database::{
     DataBase, column_names, generate_select_columns_sql, quoteIdentifier, row_to_valueset,
     validateIdentifier,
@@ -405,22 +407,32 @@ impl<T: DbRecord> QueryBuilder<T> {
     pub fn fetch(self) -> Result<Vec<T>, DbError> {
         // get the sql command with ? and the params to replace
         let (sql, params) = self.build_select();
-        // lock the db
-        let conn: std::sync::MutexGuard<'_, rusqlite::Connection> = self.db.lock();
-        // prepare the sql command for rusqlite execution (check syntax, prepare a plan, ...)
-        let mut stmt: rusqlite::Statement<'_> = conn.prepare(&sql)?;
-        // 1. execute the command whit params give by an iter
-        // 2. map each row and change the data in valueSet
-        let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
-            row_to_valueset(row, &self.columnNames)
-        })?;
+        let rawRows: Vec<super::ValueSet> = {
+            // lock the db
+            let conn: std::sync::MutexGuard<'_, rusqlite::Connection> = self.db.lock();
+            // prepare the sql command for rusqlite execution (check syntax, prepare a plan, ...)
+            let mut stmt: rusqlite::Statement<'_> = conn.prepare(&sql)?;
+            super::database::QUERY_COUNT.fetch_add(1, Ordering::Relaxed);
+            // 1. execute the command whit params give by an iter
+            // 2. map each row and change the data in valueSet
+            let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+                row_to_valueset(row, &self.columnNames)
+            })?;
+            let mut buffered: Vec<super::ValueSet> = Vec::new();
+            for row in rows {
+                buffered.push(row?);
+            }
+            buffered
+            // conn (the MutexGuard) is dropped right here
+        };
+
+        let _cache_scope = self.db.cache_scope();
+        self.db.cache_rows::<T>(&rawRows);
+        T::preload(&rawRows, &self.db)?;
 
         let mut result: Vec<T> = Vec::new();
-
-        for row in rows {
-            let valueSet: super::ValueSet = row?;
-            // T::getValues(&valueSet) convert the value in struct
-            result.push(T::getValues(&valueSet).map_err(|e| {
+        for valueSet in &rawRows {
+            result.push(T::getValues(valueSet, &self.db).map_err(|e| {
                 // convert the error in rusqlite error
                 rusqlite::Error::FromSqlConversionFailure(
                     0,

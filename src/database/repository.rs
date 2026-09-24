@@ -180,6 +180,9 @@ impl<T: DbRecord> Repository<T> {
      when you want to exclude soft-deleted records.
     */
     pub fn find(&self, id: i64) -> Result<Option<T>, DbError> {
+        if let Some(cached) = self.db.cached_row(T::table_name(), id) {
+            return Ok(Some(T::getValues(&cached, &self.db)?));
+        }
         self.query().where_eq("id", id).fetch_one()
     }
 

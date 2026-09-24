@@ -5,6 +5,9 @@
 // ValueSet is the opaque row handle passed to from_values().
 // The app accesses column values by name — no positional indices, no rusqlite.
 
+use std::clone;
+
+use crate::database::DataBase;
 use crate::database::column::{Column, IndexDef};
 use crate::database::error::DbError;
 use crate::database::value::SqlValue;
@@ -26,6 +29,7 @@ use crate::database::value::SqlValue;
 ///     })
 /// }
 /// ```
+#[derive(Clone)]
 pub struct ValueSet {
     /// values[0] = id, values[1..] = DbRecord::columns() in order.
     values: Vec<SqlValue>,
@@ -63,8 +67,6 @@ impl ValueSet {
             .ok_or_else(|| DbError::ColumnValueNotFound(name.into()))
     }
 }
-
-// ── DbRecord trait ────────────────────────────────────────────────────────────
 
 /// Trait that makes a struct storable in a SQLite table via Repository<T>.
 ///
@@ -156,7 +158,18 @@ pub trait DbRecord: Sized + Clone {
     /// Deserialize one database row into Self.
     ///
     /// Access columns by name using `ValueSet::get("col")`.
-    fn getValues(v: &ValueSet) -> Result<Self, DbError>;
+    // fn getValues(v: &ValueSet) -> Result<Self, DbError>;
+    fn getValues(v: &ValueSet, db: &DataBase) -> Result<Self, DbError>;
+
+    /// Optional batch-preload hook, called once with every raw row a fetch()
+    /// is about to convert, before getValues runs on any of them. Default: no-op.
+    /// Use it to fetch every related row this batch needs in one query (e.g.
+    /// `db.getRepository::<Game>().find_many(&ids)?`), which populates the
+    /// cache so each row's own getValues -> find() call hits it instead of
+    /// running its own query.
+    fn preload(_rows: &[ValueSet], _db: &DataBase) -> Result<(), DbError> {
+        Ok(())
+    }
 
     /// Serialize Self into column-name → value pairs for INSERT and UPDATE.
     ///

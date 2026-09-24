@@ -13,12 +13,15 @@
 
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::collections::HashMap;
+use std::sync::atomic::AtomicUsize;
 
 use rusqlite::Connection;
 
 // use crate::database::column::Column;
 use crate::database::error::DbError;
 use crate::database::record::DbRecord;
+use crate::database::ValueSet;
 use crate::database::repository;
 
 // ── Db ────────────────────────────────────────────────────────────────────────
@@ -33,7 +36,13 @@ use crate::database::repository;
 #[derive(Clone)]
 pub struct DataBase {
     inner: Arc<Mutex<Connection>>,
+    /// Row cache used to batch-avoid N+1 queries when a `DbRecord::getValues`
+    /// hydrates a related record. `None` when no fetch is in progress;
+    /// `Some(map)` for the duration of one (possibly nested) `fetch()` call
+    /// tree. Keyed by `(table_name, id)`.
+    cache: Arc<Mutex<Option<HashMap<(&'static str, i64), ValueSet>>>>,
 }
+pub static QUERY_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 impl DataBase {
     // ── Constructors ──────────────────────────────────────────────────────────
@@ -52,6 +61,7 @@ impl DataBase {
         configure(&conn)?;
         Ok(Self {
             inner: Arc::new(Mutex::new(conn)),
+            cache: Arc::new(Mutex::new(Some(HashMap::new())))
         })
     }
 
@@ -63,6 +73,7 @@ impl DataBase {
         configure(&conn)?;
         Ok(Self {
             inner: Arc::new(Mutex::new(conn)),
+            cache: Arc::new(Mutex::new(Some(HashMap::new())))
         })
     }
 
@@ -110,6 +121,40 @@ impl DataBase {
     /// Never hold it across an `.await` or across frames.
     pub(crate) fn lock(&self) -> MutexGuard<'_, Connection> {
         self.inner.lock().expect("DB mutex poisoned")
+    }
+
+    /// Enter a cache scope for one `fetch()` call tree. "First one in" (finds
+    /// the cache `None`) creates it and owns cleanup; a `fetch()` triggered
+    /// from inside that tree (via `preload` or a nested `find`) sees it
+    /// already `Some(..)`, doesn't own it, and leaves it for the outer call.
+    pub(crate) fn cache_scope(&self) -> CacheScopeGuard<'_> {
+        let owns_scope = {
+            let mut guard = self.cache.lock().expect("DB cache mutex poisoned");
+            if guard.is_none() {
+                *guard = Some(HashMap::new());
+                true
+            } else {
+                false
+            }
+        };
+        CacheScopeGuard { db: self, owns_scope }
+    }
+
+    /// Store freshly-fetched rows of type T in the cache, if a scope is active.
+    pub(crate) fn cache_rows<T: DbRecord>(&self, rows: &[ValueSet]) {
+        let mut guard = self.cache.lock().expect("DB cache mutex poisoned");
+        if let Some(map) = guard.as_mut() {
+            for row in rows {
+                if let Ok(id) = row.getValue("id").and_then(|v| v.as_i64()) {
+                    map.insert((T::table_name(), id), row.clone());
+                }
+            }
+        }
+    }
+
+    /// Look up one previously-cached row.
+    pub(crate) fn cached_row(&self, table: &'static str, id: i64) -> Option<ValueSet> {
+        self.cache.lock().expect("DB cache mutex poisoned").as_ref()?.get(&(table, id)).cloned()
     }
 
     /// Create the table and indexes for T if they do not already exist.
@@ -276,4 +321,20 @@ pub(crate) fn generate_select_columns_sql<T: DbRecord>() -> String {
 /// Extract static column names from T::columns().
 pub(crate) fn column_names<T: DbRecord>() -> Vec<&'static str> {
     T::columns().iter().map(|c: &super::Column| c.name).collect()
+}
+
+/// RAII guard returned by `DataBase::cache_scope`. Clears the row cache
+/// back to `None` on drop, but only if this guard is the one that created
+/// the scope.
+pub(crate) struct CacheScopeGuard<'a> {
+    db: &'a DataBase,
+    owns_scope: bool,
+}
+
+impl<'a> Drop for CacheScopeGuard<'a> {
+    fn drop(&mut self) {
+        if self.owns_scope {
+            *self.db.cache.lock().expect("DB cache mutex poisoned") = None;
+        }
+    }
 }
