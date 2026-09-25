@@ -14,7 +14,7 @@ use syn::{
 /* say that DbRecord is a "derive" macro */
 /* `attributes(...)` say that we can use it */
 /**
-`#[column(skip)]` -> don't add the column at the db
+`#[column(skip)]` -> don't add the column at the db need default for the value
 `#[column(nullable)]` -> set the column as nullable
 `#[column(not_null)]` -> don't allow null value for the column
 `#[column(name="")]` -> set the name of the column
@@ -125,6 +125,11 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
 
         /* if `#[attrib(skip)]` -> skip the field */
         if (attrs.skip) {
+            /* The field still exists on the struct, so `getValues` must produce
+            *some* value for it — but since it has no column, that value can never
+            come from the row `v`. We use `Default::default()` instead, which
+            keeps this field fully disconnected from the DB in both directions. */
+            get_values_exprs.push(quote! { #ident: ::core::default::Default::default() });
             continue;
         }
         /* #endregion */
@@ -251,6 +256,11 @@ fn impl_db_record(ast: &DeriveInput) -> syn::Result<TokenStream2> {
             fn set_id(&mut self, id: i64) {
                 self.id = id;
             }
+
+            // Newly added: empty TokenStream2 for relation-free structs
+            // (default `preload` from the trait applies), or the batched
+            // find_many override when the struct has relation fields.
+            #preload_impl
         }
     })
 }

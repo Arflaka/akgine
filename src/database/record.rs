@@ -5,8 +5,6 @@
 // ValueSet is the opaque row handle passed to from_values().
 // The app accesses column values by name — no positional indices, no rusqlite.
 
-use std::clone;
-
 use crate::database::DataBase;
 use crate::database::column::{Column, IndexDef};
 use crate::database::error::DbError;
