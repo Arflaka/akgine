@@ -1,8 +1,10 @@
-//! Parsing of the field-level `#[column(...)]` attribute.
+/*! Parsing of the field-level `#[column(...)]` attribute. */
 
 use syn::Field;
 
-/// What we found in `#[column(...)]`.
+/**
+ *  What we found in `#[column(...)]`.
+ */
 #[derive(Default)]
 pub(super) struct FieldAttrs {
     pub skip: bool,
@@ -10,8 +12,7 @@ pub(super) struct FieldAttrs {
     pub not_null: bool,
     pub name: Option<String>,
     pub default: Option<String>,
-    /// `#[column(relation)]` - the field is a foreign key to another DbRecord.
-    pub relation: bool,
+    pub foreignKey: bool,
 }
 
 impl FieldAttrs {
@@ -43,8 +44,8 @@ impl FieldAttrs {
                         ));
                     }
                     out.not_null = true;
-                } else if (meta.path.is_ident("relation")) {
-                    out.relation = true;
+                } else if (meta.path.is_ident("foreignKey")) {
+                    out.foreignKey = true;
                 } else if (meta.path.is_ident("name")) {
                     /* value after `=` must be a string literal */
                     let s: syn::LitStr = meta.value()?.parse()?;

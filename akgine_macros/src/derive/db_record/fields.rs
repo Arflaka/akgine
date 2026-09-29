@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{punctuated::Punctuated, token::Comma, Field};
+use syn::{Field, punctuated::Punctuated, token::Comma};
 
 use super::attrs::FieldAttrs;
 use super::columns;
@@ -65,7 +65,7 @@ fn process_field(field: &Field, out: &mut Fragments) -> syn::Result<()> {
     let active_type = inner.unwrap_or(&field.ty);
 
     /* relation fields: the SQL column stores the related row's id */
-    if (attrs.relation) {
+    if (attrs.foreignKey) {
         let fk_col_name: String = attrs
             .name
             .clone()
@@ -110,8 +110,11 @@ fn process_field(field: &Field, out: &mut Fragments) -> syn::Result<()> {
         active_type,
         is_option,
     )?);
-    out.get_values_exprs
-        .push(columns::generate_get_value_expr(ident, active_type, &col_name_lit)?);
+    out.get_values_exprs.push(columns::generate_get_value_expr(
+        ident,
+        active_type,
+        &col_name_lit,
+    )?);
     out.to_params_exprs
         .push(columns::generate_to_params_expr(ident, &col_name_lit));
     Ok(())
