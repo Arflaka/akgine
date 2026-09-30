@@ -1,5 +1,6 @@
-//! Walks every struct field and dispatches it to the right generator
-//! (id / skipped / relation / plain column).
+/*! Walks every struct field and dispatches it to the right generator
+ *  (id / skipped / relation / plain column).
+ */
 
 use std::collections::HashSet;
 
@@ -12,14 +13,13 @@ use super::columns;
 use super::relation::{self, RelationInfo};
 use crate::util::option::unwrap_option;
 
-/// Everything collected while walking the fields.
+/** Everything collected while walking the fields. */
 pub(super) struct Fragments {
     pub col_exprs: Vec<TokenStream2>,
     pub get_values_exprs: Vec<TokenStream2>,
     pub to_params_exprs: Vec<TokenStream2>,
-    /// One entry per `#[column(relation)]` field (used to build `preload()`).
     pub relations: Vec<RelationInfo>,
-    /// All valid SQL column names, used to verify `#[index(..)]`.
+    /** All valid SQL column names, used to verify `#[index(..)]`. */
     pub valid_columns: HashSet<String>,
 }
 
@@ -62,7 +62,7 @@ fn process_field(field: &Field, out: &mut Fragments) -> syn::Result<()> {
     }
 
     let (is_option, inner) = unwrap_option(&field.ty);
-    let active_type = inner.unwrap_or(&field.ty);
+    let active_type: &syn::Type = inner.unwrap_or(&field.ty);
 
     /* relation fields: the SQL column stores the related row's id */
     if (attrs.foreignKey) {
@@ -70,8 +70,8 @@ fn process_field(field: &Field, out: &mut Fragments) -> syn::Result<()> {
             .name
             .clone()
             .unwrap_or_else(|| format!("{fieldName}_id"));
-        let fk_lit = syn::LitStr::new(&fk_col_name, ident.span());
-        let related_type = active_type.clone();
+        let fk_lit: syn::LitStr = syn::LitStr::new(&fk_col_name, ident.span());
+        let related_type: syn::Type = active_type.clone();
 
         out.col_exprs.push(relation::generate_column_expr(
             &fk_lit,
@@ -101,7 +101,7 @@ fn process_field(field: &Field, out: &mut Fragments) -> syn::Result<()> {
 
     /* plain scalar field */
     let col_name: &str = attrs.name.as_deref().unwrap_or(&fieldName);
-    let col_name_lit = syn::LitStr::new(col_name, ident.span());
+    let col_name_lit: syn::LitStr = syn::LitStr::new(col_name, ident.span());
     out.valid_columns.insert(col_name.to_string());
 
     out.col_exprs.push(columns::generate_column_expr(
