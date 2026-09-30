@@ -22,7 +22,7 @@ rusqlite = { version = "0.40.2", features = ["bundled"], optional = true }
 tiny_http = { version = "0.12", optional = true }
 
 [features]
-default = ["derive", "database"]                           # Aucune feature n'est activée par défaut
+default = ["derive", "database"]
 derive = ["dep:akgine_macros"]
 gui = ["dep:egui_extras", "dep:eframe"]
 database = ["dep:serde", "dep:serde_json", "dep:rusqlite"]
