@@ -34,7 +34,7 @@ dependencies = [
 
 [[package]]
 name = "akgine"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "akgine_macros",
  "android-activity",
@@ -48,7 +48,7 @@ dependencies = [
 
 [[package]]
 name = "akgine_macros"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "proc-macro2",
  "quote",
