@@ -1,4 +1,4 @@
-//! Generates the batched `preload()` override for structs with relations.
+/*! Generates the batched `preload()` override for structs with relations. */
 
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
@@ -13,14 +13,16 @@ pub(super) fn generate_preload_impl(relations: &[RelationInfo]) -> TokenStream2 
         return TokenStream2::new();
     }
 
+    /* one block by foreignKey */
     let blocks: Vec<TokenStream2> = relations
         .iter()
-        .map(|r| {
+        .map(|relation| {
             let RelationInfo {
                 col_name_lit,
                 related_type,
                 is_option,
-            } = r;
+            } = relation;
+
             let collect_ids: TokenStream2 = if *is_option {
                 quote! {
                     rows.iter()
@@ -36,9 +38,13 @@ pub(super) fn generate_preload_impl(relations: &[RelationInfo]) -> TokenStream2 
             };
             quote! {
                 {
+                    /* collect all id */
                     let mut ids: Vec<i64> = #collect_ids;
+                    /* sort the vec */
                     ids.sort_unstable();
+                    /* delete all duplicate */
                     ids.dedup();
+                    /* make the research for all id in one time */
                     db.getRepository::<#related_type>().find_many(&ids)?;
                 }
             }
