@@ -1,14 +1,19 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(non_snake_case)]
 #[cfg(feature = "database")]
+#[cfg_attr(docsrs, doc(cfg(feature = "database")))]
 pub mod database;
 
 #[cfg(feature = "gui")]
+#[cfg_attr(docsrs, doc(cfg(feature = "gui")))]
 pub mod gui;
 
 #[cfg(feature = "web")]
+#[cfg_attr(docsrs, doc(cfg(feature = "web")))]
 pub mod web;
 
 #[cfg(feature = "derive")]
+#[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
 pub use akgine_macros;
 
 // ── Utility ───────────────────────────────────────────────────────────────────
