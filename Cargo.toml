@@ -1,6 +1,6 @@
 [package]
 name = "akgine"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2024"
 description = "Global function"
 license = "GPL-3.0-only"
@@ -33,6 +33,8 @@ eframe = { version = "0.36.2", default-features = false, optional = true, featur
     "default_fonts",
     "glow",
     "persistence",
+    "wayland",
+    "x11",
 ] }
 
 # eframe SANS les features desktop/accesskit quand on build Android
@@ -47,6 +49,6 @@ android-activity = { version = "0.6", features = ["native-activity"] }
 
 [package.metadata.docs.rs]
 all-features = true
-features = ["database", "derive", "gui", "web"]
+# features = ["database", "derive", "gui", "web"]
 # Pass a cfg flag to rustdoc so the docs can show feature badges
 rustdoc-args = ["--cfg", "docsrs"]
