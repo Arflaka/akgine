@@ -12,6 +12,14 @@ impl HttpResponse {
         Self { status, body }
     }
 
+    /** Build a response from a string that is ALREADY valid JSON. */
+    pub fn json_raw(status: u16, json: String) -> Self {
+        Self {
+            status,
+            body: json.into_bytes(),
+        }
+    }
+
     pub fn status_only(status: u16) -> Self {
         Self {
             status,
