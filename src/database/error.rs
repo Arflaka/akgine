@@ -5,6 +5,9 @@ pub enum DbError {
     /// A wrapper for SQLite engine error.
     Sql(rusqlite::Error),
 
+    /// A wrapper for a JSON serialization error (used by the export).
+    Json(serde_json::Error),
+
     /// A column value had an unexpected SQLite type.
     TypeMismatch {
         column: String,
@@ -37,6 +40,7 @@ impl fmt::Display for DbError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DbError::Sql(e) => write!(f, "SQLite: {e}"),
+            DbError::Json(e) => write!(f, "JSON: {e}"),
             DbError::TypeMismatch {
                 column,
                 expected,
@@ -56,10 +60,10 @@ impl fmt::Display for DbError {
 impl std::error::Error for DbError {
     // use to know if there is a sub-error
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        if let DbError::Sql(e) = self {
-            Some(e)
-        } else {
-            None
+        match self {
+            DbError::Sql(e) => Some(e),
+            DbError::Json(e) => Some(e),
+            _ => None,
         }
     }
 }
@@ -68,5 +72,12 @@ impl std::error::Error for DbError {
 impl From<rusqlite::Error> for DbError {
     fn from(e: rusqlite::Error) -> Self {
         DbError::Sql(e)
+    }
+}
+
+// Automatic ? conversion from serde_json errors inside the lib.
+impl From<serde_json::Error> for DbError {
+    fn from(e: serde_json::Error) -> Self {
+        DbError::Json(e)
     }
 }

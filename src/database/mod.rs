@@ -11,6 +11,7 @@
 mod column;
 mod database;
 mod error;
+mod export;
 mod query;
 mod record;
 mod repository;
@@ -21,6 +22,7 @@ mod value;
 pub use column::{ColType, Column, IndexDef};
 pub use database::DataBase;
 pub use error::DbError;
+pub use export::exportJson;
 pub use query::{Direction, QueryBuilder};
 pub use record::{DbRecord, ValueSet};
 pub use repository::Repository;
