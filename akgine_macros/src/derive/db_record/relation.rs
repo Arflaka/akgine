@@ -79,10 +79,14 @@ pub(super) fn generate_get_value_expr(
  */
 pub(super) fn generate_to_params_expr(
     ident: &syn::Ident,
+    related_type: &Type,
     fk_col_name_lit: &syn::LitStr,
     fieldName: &str,
     is_option: bool,
 ) -> TokenStream2 {
+    /* path to the trait method: `<Game as akgine::database::DbRecord>::id` */
+    let id_fn: TokenStream2 = quote! { <#related_type as ::akgine::database::DbRecord>::id };
+
     if is_option {
         /* Optional relation: a missing relation is stored as NULL. */
         quote! {
@@ -93,7 +97,7 @@ pub(super) fn generate_to_params_expr(
         let msg: String =
             format!("`{fieldName}` must be persisted (have a real id) before saving this record");
         quote! {
-            (#fk_col_name_lit, self.#ident.id().expect(#msg).into())
+            (#fk_col_name_lit, #id_fn(&self.#ident).expect(#msg).into())
         }
     }
 }

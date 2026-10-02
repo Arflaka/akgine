@@ -1,6 +1,6 @@
 [package]
 name = "akgine"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2024"
 description = "Global function"
 license = "GPL-3.0-only"
@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"] # required for Android .so
 unused_parens = "allow"
 
 [dependencies]
-akgine_macros = { path = "./akgine_macros", version = "0.1.5", optional = true }
+akgine_macros = { path = "./akgine_macros", version = "0.1.6", optional = true }
 serde_json = { version = "1.0.151", optional = true }
 egui_extras = { version = "0.36.2", features = ["image"], optional = true }
 serde = { version = "1.0.229", features = ["derive"], optional = true }

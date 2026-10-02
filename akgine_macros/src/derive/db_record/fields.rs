@@ -86,7 +86,11 @@ fn process_field(field: &Field, out: &mut Fragments) -> syn::Result<()> {
             is_option,
         ));
         out.to_params_exprs.push(relation::generate_to_params_expr(
-            ident, &fk_lit, &fieldName, is_option,
+            ident,
+            &related_type,
+            &fk_lit,
+            &fieldName,
+            is_option,
         ));
 
         /* FK columns are real columns, so they can be indexed */
