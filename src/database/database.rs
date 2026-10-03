@@ -170,11 +170,15 @@ impl DataBase {
         let conn: MutexGuard<'_, Connection> = self.lock();
 
         // Run inside one transaction so partial failure leaves nothing behind.
-        conn.execute_batch(&format!(
-            "BEGIN;\n{}\n{}\nCOMMIT;",
+        // The transaction is rolled back automatically if it is dropped before `commit()`
+        // (a plain "BEGIN; ... COMMIT;" batch would stay open after a failing statement).
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(&format!(
+            "{}\n{}",
             createTableQuery,
             createIndexesQuery.join("\n")
         ))?;
+        tx.commit()?;
 
         Ok(())
     }
