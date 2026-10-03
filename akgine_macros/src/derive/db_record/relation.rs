@@ -76,6 +76,11 @@ pub(super) fn generate_get_value_expr(
 
 /** `toParams` for a relation field: write the related row's own id
  *  (the related row must already be persisted).
+ *
+ *  The id is read with a fully qualified call to `DbRecord::id`.
+ *  A method call like `self.field.id()` would pick an inherent `id()` defined on
+ *  the related type (e.g. `fn id(&self) -> i64`) before the trait method, and
+ *  would also require `DbRecord` to be imported in the user's module.
  */
 pub(super) fn generate_to_params_expr(
     ident: &syn::Ident,
@@ -90,7 +95,7 @@ pub(super) fn generate_to_params_expr(
     if is_option {
         /* Optional relation: a missing relation is stored as NULL. */
         quote! {
-            (#fk_col_name_lit, self.#ident.as_ref().and_then(|r| r.id()).into())
+            (#fk_col_name_lit, self.#ident.as_ref().and_then(#id_fn).into())
         }
     } else {
         /* The related record MUST have an id, otherwise we panic with `msg`. */
