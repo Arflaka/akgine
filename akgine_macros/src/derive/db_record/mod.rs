@@ -5,7 +5,7 @@
  *  - plain column code generation         -> `columns.rs`
  *  - foreign keys (`relation`)            -> `relation.rs`
  *  - batched `preload()`                  -> `preload.rs`
- *  - `#[index(..)]` validation            -> `indexes.rs`
+ *  - `#[index(..)]` / `#[unique(..)]`     -> `indexes.rs`
  *  - per-field dispatch loop              -> `fields.rs`
  *  - final `impl DbRecord` assembly       -> this file
  */
