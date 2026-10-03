@@ -17,10 +17,10 @@ use proc_macro::TokenStream;
  * - `#[column(name="")]`   -> custom column name
  * - `#[column(default=)]`  -> default value
  * - `#[column(relation)]`  -> foreign key to another `DbRecord` type
- *   (see `derive/db_record/relation.rs` and `preload.rs`)
  * - `#[index("col1", "col2")]` -> index on the given columns
+ * - `#[unique("col1", "col2")]` -> unique index: two rows can't share the same values
 */
-#[proc_macro_derive(DbRecord, attributes(table, column, index))]
+#[proc_macro_derive(DbRecord, attributes(table, column, index, unique))]
 pub fn derive_db_record(input: TokenStream) -> TokenStream {
     derive::run(input, derive::db_record::expand)
 }
