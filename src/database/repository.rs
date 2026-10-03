@@ -239,22 +239,28 @@ impl<T: DbRecord> Repository<T> {
     */
     pub fn insert_many(&self, records: Vec<T>) -> Result<Vec<i64>, DbError> {
         let conn = self.db.lock();
-        conn.execute_batch("BEGIN;")?;
+        /* A `Transaction` rolls back by itself when it is dropped without `commit()`.
+        Without it, one failed INSERT (e.g. a UNIQUE violation) would leave the shared
+        connection stuck inside an open transaction and break every later write. */
+        let tx = conn.unchecked_transaction()?;
+        let table = quoteIdentifier(T::table_name());
 
-        let mut ids = Vec::with_capacity(records.len());
-        for mut record in records {
-            let params = record.toParams();
-            /* validate_params(&params)?; */
-            let (col_sql, placeholders, values) = generate_insert_query(&params);
-            let table = quoteIdentifier(T::table_name());
-            let sql = format!("INSERT INTO {table} ({col_sql}) VALUES ({placeholders})");
-            conn.execute(&sql, rusqlite::params_from_iter(values.iter()))?;
-            let id = conn.last_insert_rowid();
-            record.set_id(id);
-            ids.push(id);
-        }
+        /* `collect` into a `Result` stops at the first failing INSERT */
+        let ids: Vec<i64> = records
+            .into_iter()
+            .map(|mut record| -> Result<i64, DbError> {
+                let params = record.toParams();
+                /* validate_params(&params)?; */
+                let (col_sql, placeholders, values) = generate_insert_query(&params);
+                let sql = format!("INSERT INTO {table} ({col_sql}) VALUES ({placeholders})");
+                tx.execute(&sql, rusqlite::params_from_iter(values.iter()))?;
+                let id = tx.last_insert_rowid();
+                record.set_id(id);
+                Ok(id)
+            })
+            .collect::<Result<Vec<i64>, DbError>>()?;
 
-        conn.execute_batch("COMMIT;")?;
+        tx.commit()?;
         Ok(ids)
     }
 }
