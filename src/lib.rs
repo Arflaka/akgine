@@ -12,6 +12,10 @@ pub mod gui;
 #[cfg_attr(docsrs, doc(cfg(feature = "web")))]
 pub mod web;
 
+#[cfg(feature = "router")]
+#[cfg_attr(docsrs, doc(cfg(feature = "router")))]
+pub mod router;
+
 #[cfg(feature = "derive")]
 #[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
 pub use akgine_macros;
