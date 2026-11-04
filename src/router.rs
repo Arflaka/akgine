@@ -1,3 +1,4 @@
+/*! Basic router with param in the path and method */
 use std::collections::HashMap;
 
 pub type PathParams = HashMap<String, String>;
@@ -23,7 +24,7 @@ impl<Method: PartialEq, Response: Clone> Router<Method, Response> {
         Self { routes: Vec::new() }
     }
 
-    /// Register a route. `pattern` looks like `/conversations/:id/messages`.
+    /** Register a route. `pattern` looks like `/conversations/:id/messages`. */
     pub fn add(&mut self, method: Method, pattern: &str, response: Response) {
         let segments = pattern
             .trim_matches('/')
@@ -42,7 +43,7 @@ impl<Method: PartialEq, Response: Clone> Router<Method, Response> {
         });
     }
 
-    pub fn dispatch(&self, path: String, method: Method) -> Option<(Response, PathParams)> {
+    pub fn dispatch(&self, path: &str, method: Method) -> Option<(Response, PathParams)> {
         let req_segments: Vec<&str> = path
             .trim_matches('/')
             .split('/')
@@ -79,14 +80,3 @@ impl<Method: PartialEq, Response: Clone> Router<Method, Response> {
         return None;
     }
 }
-
-// Parse a `:id`-style path param as `i64`, or fail with a clean 400.
-// pub fn param_i64(params: &PathParams, name: &str) -> Result<i64, RouterError> {
-//     params
-//         .get(name)
-//         .and_then(|v| v.parse().ok())
-//         .ok_or_else(|| {
-//             RouterError::Validation(format!("path parameter '{name}' must be an integer"))
-//         })
-// }
-// }

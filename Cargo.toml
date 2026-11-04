@@ -26,7 +26,7 @@ default = ["derive", "web"]
 derive = ["dep:akgine_macros"]
 gui = ["dep:egui_extras", "dep:eframe"]
 database = ["dep:serde", "dep:serde_json", "dep:rusqlite", "router"]
-web = ["dep:tiny_http", "router"]
+web = ["dep:tiny_http", "dep:serde", "dep:serde_json", "router"]
 router = []
 
 [target.'cfg(not(target_os = "android"))'.dependencies]

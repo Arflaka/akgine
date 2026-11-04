@@ -1,25 +1,29 @@
-//! `ApiError` is the single error type that flows from the repository layer
-//! up to the HTTP layer. Keeping it here (rather than letting `akgine::DbError`
-//! leak into handlers) is what lets us swap the database backend later
-//! without touching `handlers/` at all.
-
+/*! `ApiError` is the error type that export all problem with the http service */
+#[cfg(feature = "database")]
+#[cfg_attr(docsrs, doc(cfg(feature = "database")))]
 use crate::database::DbError;
 use std::fmt;
 
 #[derive(Debug)]
 pub enum ApiError {
-    /// The requested resource does not exist. -> HTTP 404.
+    /** The requested resource does not exist. -> HTTP 404. */
     NotFound(String),
-    /// The request body/parameters failed validation. -> HTTP 400.
+    /** The request body/parameters failed validation. -> HTTP 400. */
     Validation(String),
-    /// The request conflicts with existing state (duplicate username, etc.). -> HTTP 409.
+    /** The request conflicts with existing data. -> HTTP 409. */
     Conflict(String),
-    /// Anything else (I/O, SQL, ...). -> HTTP 500. The detailed message is
-    /// logged server-side but not echoed to the client.
+    /** Anything else (I/O, SQL, ...). -> HTTP 500. */
     Internal(String),
 }
 
 impl ApiError {
+    /**
+     * Retrun the code http to send to the client
+     * - `ApiError::NotFound => 404`
+     * - `ApiError::Validation => 400`
+     * - `ApiError::Conflict => 409`
+     * - `ApiError::Internal => 500`
+     */
     pub fn status_code(&self) -> u16 {
         match self {
             ApiError::NotFound(_) => 404,
@@ -29,7 +33,7 @@ impl ApiError {
         }
     }
 
-    /// Message safe to send back to the client (internal errors are redacted).
+    /** Message to send back to the client. */
     pub fn public_message(&self) -> String {
         match self {
             ApiError::NotFound(m) | ApiError::Validation(m) | ApiError::Conflict(m) => m.clone(),
@@ -51,14 +55,9 @@ impl fmt::Display for ApiError {
 
 impl std::error::Error for ApiError {}
 
-/// Translate a raw `akgine::DbError` into an `ApiError`.
-///
-/// IMPORTANT: the installed `akgine` version can leave its shared connection
-/// stuck in an open transaction after a failed `insert()` (see the module
-/// docs in `repositories::user_repository` for the full explanation and the
-/// pre-validation mitigation used throughout `repositories/`). That specific
-/// SQLite message is detected here and turned into a clearly labeled
-/// internal error instead of a generic one, so it is easy to spot in logs.
+#[cfg(feature = "database")]
+#[cfg_attr(docsrs, doc(cfg(feature = "database")))]
+/** Translate a raw `akgine::DbError` into an `ApiError`. */
 impl From<DbError> for ApiError {
     fn from(e: DbError) -> Self {
         match &e {
