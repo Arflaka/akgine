@@ -16,6 +16,7 @@ pub type HandlerFn<T> =
     dyn Fn(&T, &ParsedRequest, &PathParams) -> Result<HttpResponse, ApiError> + Send + Sync;
 
 pub fn run<T: Clone + Send + 'static>(
+    isHttps: bool,
     bind_addr: &str,
     worker_threads: usize,
     state: T,
@@ -28,6 +29,7 @@ pub fn run<T: Clone + Send + 'static>(
             std::process::exit(1);
         }
     };
+
     let router: Arc<Router<Method, Arc<HandlerFn<T>>>> = Arc::new(router);
 
     println!("chat-backend listening on http://{bind_addr} ({worker_threads} workers)");
