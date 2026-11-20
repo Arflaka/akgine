@@ -14,11 +14,12 @@ crate-type = ["cdylib", "rlib"] # required for Android .so
 unused_parens = "allow"
 
 [dependencies]
+# akgine_macros = { version = "0.1.7", optional = true }
 akgine_macros = { path = "./akgine_macros", version = "0.1.7", optional = true }
 serde_json = { version = "1.0.154", optional = true }
 egui_extras = { version = "0.37.0", features = ["image"], optional = true }
 serde = { version = "1.0.229", features = ["derive"], optional = true }
-rusqlite = { version = "0.41.1", features = ["bundled"], optional = true }
+rusqlite = { version = "0.43.0", features = ["bundled"], optional = true }
 tiny_http = { version = "0.12", optional = true }
 
 [features]
